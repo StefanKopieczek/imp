@@ -8,8 +8,8 @@ decode(<<"[", Msg/binary>>) ->
         Other ->
             {error, Other}
     end;
-decode(_) ->
-    error.
+decode(Msg) ->
+    {error, {invalid_format, Msg}}.
 
 decode(<<"]">>, PriorParts, Buffer, false) ->
     {impsig, [lists:reverse(Buffer) | PriorParts]};
@@ -33,7 +33,7 @@ decode(<<Char, Rest/binary>>, PriorParts, Buffer, true) ->
         $l ->
             decode(Rest, PriorParts, [$[ | Buffer], false);
         _ ->
-            error
+            {error, {unexpected_escape, Char}}
     end;
 decode(_, _, _, _) ->
     {error, nomatch}.
@@ -65,16 +65,19 @@ stream_decode(Receiver, "", Acc, Escaped) ->
     receive
         {decode, Chunk} ->
             stream_decode(Receiver, binary_to_list(Chunk), Acc, Escaped);
-        {stop} ->
+        stop ->
+            io:format("Stream decoder stops~n"),
             ok;
-        _ ->
+        Unexpected ->
             %% Maybe a log line here? @@SMK@@
+            io:format("Stream decoder skips unexpected data ~p~n", [Unexpected]),
             stream_decode(Receiver, "", Acc, Escaped)
     end;
 stream_decode(Receiver, [Char | Rest], Acc, false) ->
     case Char of
         $] ->
-            Receiver ! {decode_result, decode(list_to_binary(lists:reverse([$] | Acc])))},
+            Result = {decode_result, decode(list_to_binary(lists:reverse([$] | Acc])))},
+            Receiver ! Result,
             stream_decode(Receiver, Rest, "", false);
         $@ ->
             stream_decode(Receiver, Rest, [$@ | Acc], true);

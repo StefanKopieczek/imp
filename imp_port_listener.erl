@@ -30,15 +30,27 @@ listen(LSock) ->
     end.
 
 manage_conn(Sock) ->
-    io:format("Conn manager starts~n"),
+    Decoder = spawn(imp_protocol, stream_decode, [self()]),
+    manage_conn(Sock, Decoder).
+
+manage_conn(Sock, Decoder) ->
     receive
         {tcp, Sock, Data} ->
-            io:format("Data received: ~p~n", [Data]);
+            Decoder ! {decode, Data},
+            manage_conn(Sock, Decoder);
         {tcp_closed, Sock} ->
             io:format("TCP connection closed~n"),
-            ok;
+            Decoder ! stop;
         {tcp_error, Sock, Err} ->
             %% Should log this
             io:format("TCP Error: ~p~n", [Err]),
+            Decoder ! stop,
+            error;
+        {decode_result, {impsig, Msg}} ->
+            io:format("Decoded message: ~p~n", [Msg]),
+            manage_conn(Sock, Decoder);
+        Unexpected ->
+            io:format("Unexpected message: ~p~n", [Unexpected]),
+            Decoder ! stop,
             error
     end.
